@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ER HW Tester</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#1a1a1a; color:#ccc; font-family:'Courier New',monospace; font-size:13px; padding:8px; }
+h2 { font-size:14px; color:#888; border-bottom:1px solid #333; padding:4px 0; margin:12px 0 6px 0; text-transform:uppercase; letter-spacing:1px; }
+h2:first-of-type { margin-top:0; }
+
+/* Header */
+.header { display:flex; align-items:center; gap:12px; padding:6px 0 8px 0; border-bottom:1px solid #444; margin-bottom:4px; }
+.header label { color:#888; font-size:13px; }
+.header input[type=number] { width:70px; background:#111; color:#0f0; border:1px solid #444; padding:4px 6px; font-family:inherit; font-size:16px; font-weight:bold; text-align:center; }
+.header input[type=number]::-webkit-inner-spin-button { opacity:1; }
+.btn-sm { background:#333; color:#ccc; border:1px solid #555; padding:2px 10px; cursor:pointer; font-family:inherit; font-size:14px; }
+.btn-sm:hover { background:#444; }
+.btn-sm:active { background:#555; }
+.ws-status { margin-left:auto; font-size:11px; }
+.ws-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:4px; vertical-align:middle; }
+.ws-dot.ok { background:#0f0; }
+.ws-dot.err { background:#f00; }
+
+/* Digital Inputs */
+.di-row { display:flex; gap:6px; flex-wrap:wrap; }
+.di-item { display:flex; align-items:center; gap:4px; background:#222; padding:4px 8px; border:1px solid #333; min-width:80px; }
+.di-led { width:12px; height:12px; border-radius:50%; background:#333; border:1px solid #555; }
+.di-led.on { background:#0f0; border-color:#0a0; }
+.di-label { color:#888; font-size:12px; }
+
+/* PWM */
+.pwm-row { display:flex; align-items:center; gap:6px; padding:2px 0; }
+.pwm-label { width:40px; color:#888; font-size:12px; }
+.pwm-slider { flex:1; max-width:400px; accent-color:#07f; }
+.pwm-val { width:45px; text-align:right; color:#0af; font-size:12px; }
+.btn-pwm { background:#222; color:#aaa; border:1px solid #444; padding:1px 8px; cursor:pointer; font-family:inherit; font-size:11px; }
+.btn-pwm:hover { background:#333; color:#fff; }
+.btn-pwm:active { background:#444; }
+
+/* Servo */
+.servo-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(420px, 1fr)); gap:2px; }
+.servo-row { display:flex; align-items:center; gap:4px; padding:2px 0; }
+.servo-label { width:28px; color:#888; font-size:11px; }
+.servo-slider { width:160px; accent-color:#f70; }
+.servo-val { width:35px; text-align:right; color:#fa0; font-size:11px; }
+.servo-input { width:42px; background:#111; color:#ccc; border:1px solid #444; padding:1px 3px; font-family:inherit; font-size:11px; text-align:center; }
+.servo-select { background:#111; color:#ccc; border:1px solid #444; padding:1px 2px; font-family:inherit; font-size:11px; }
+.btn-servo { background:#332200; color:#fa0; border:1px solid #553300; padding:1px 8px; cursor:pointer; font-family:inherit; font-size:11px; }
+.btn-servo:hover { background:#443300; }
+.btn-servo:active { background:#554400; }
+
+/* USB log */
+.usb-log { background:#111; border:1px solid #333; height:100px; overflow-y:auto; padding:4px; font-size:11px; color:#aaa; }
+.usb-log div.kb { color:#0af; }
+.usb-log div.ms { color:#a0f; }
+
+/* CAN log */
+.can-controls { display:flex; gap:8px; align-items:center; margin-bottom:4px; }
+.can-controls label { font-size:11px; color:#888; }
+.can-table-wrap { max-height:260px; overflow-y:auto; border:1px solid #333; }
+table { width:100%; border-collapse:collapse; font-size:11px; }
+th { background:#222; color:#888; padding:3px 6px; text-align:left; position:sticky; top:0; border-bottom:1px solid #444; }
+td { padding:2px 6px; border-bottom:1px solid #222; white-space:nowrap; }
+tr.tx { color:#0c0; }
+tr.rx { color:#6af; }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+    <label>Device ID:</label>
+    <button class="btn-sm" onclick="changeDevId(-1)">-</button>
+    <input type="number" id="devId" min="1" max="255" value="1">
+    <button class="btn-sm" onclick="changeDevId(1)">+</button>
+    <span class="ws-status"><span class="ws-dot err" id="wsDot"></span><span id="wsText">DISCONNECTED</span></span>
+</div>
+
+<!-- DIGITAL INPUTS -->
+<h2>Digital Inputs</h2>
+<div class="di-row" id="diRow"></div>
+
+<!-- PWM OUTPUTS -->
+<h2>PWM Outputs</h2>
+<div id="pwmSection"></div>
+
+<!-- SERVO OUTPUTS -->
+<h2>Servo Outputs</h2>
+<div class="servo-grid" id="servoSection"></div>
+
+<!-- USB MESSAGES -->
+<h2>USB Messages <button class="btn-sm" onclick="document.getElementById('usbLog').innerHTML=''">Clear</button></h2>
+<div class="usb-log" id="usbLog"></div>
+
+<!-- CAN FRAME LOG -->
+<h2>CAN Frame Log</h2>
+<div class="can-controls">
+    <button class="btn-sm" onclick="clearCanLog()">Clear</button>
+    <label><input type="checkbox" id="canAutoScroll" checked> Auto-scroll</label>
+    <label><input type="checkbox" id="canFilterDev"> Filter by Device ID</label>
+</div>
+<div class="can-table-wrap" id="canTableWrap">
+    <table>
+        <thead><tr>
+            <th>Time</th><th>Dir</th><th>Raw ID</th><th>Dev</th><th>Type</th>
+            <th>Resp</th><th>Opcode</th><th>Subsystem</th><th>Addr</th><th>Value</th><th>Payload</th>
+        </tr></thead>
+        <tbody id="canBody"></tbody>
+    </table>
+</div>
+
+<script>
+// --- State ---
+const NUM_DI = 8, NUM_PWM = 8, NUM_SERVO = 16, MAX_CAN_ROWS = 200, MAX_USB_ROWS = 100;
+let ws = null;
+let diState = new Array(NUM_DI).fill(false);
+
+// --- Init UI ---
+function initDI() {
+    const row = document.getElementById('diRow');
+    for (let i = 0; i < NUM_DI; i++) {
+        const el = document.createElement('div');
+        el.className = 'di-item';
+        el.innerHTML = '<div class="di-led" id="di-led-' + i + '"></div><span class="di-label">DI' + i + '</span>';
+        row.appendChild(el);
+    }
+}
+
+function initPWM() {
+    const sec = document.getElementById('pwmSection');
+    for (let i = 0; i < NUM_PWM; i++) {
+        const d = document.createElement('div');
+        d.className = 'pwm-row';
+        d.innerHTML =
+            '<span class="pwm-label">PWM' + i + '</span>' +
+            '<input type="range" class="pwm-slider" id="pwm-sl-' + i + '" min="0" max="1000" value="0" data-ch="' + i + '">' +
+            '<span class="pwm-val" id="pwm-val-' + i + '">0</span>' +
+            '<button class="btn-pwm" onclick="setPwm(' + i + ',0)">0</button>' +
+            '<button class="btn-pwm" onclick="setPwm(' + i + ',1000)">1000</button>';
+        sec.appendChild(d);
+        const sl = d.querySelector('.pwm-slider');
+        sl.addEventListener('input', function () {
+            document.getElementById('pwm-val-' + i).textContent = this.value;
+        });
+        sl.addEventListener('change', function () {
+            sendPwm(i, parseInt(this.value));
+        });
+    }
+}
+
+function initServo() {
+    const sec = document.getElementById('servoSection');
+    for (let i = 0; i < NUM_SERVO; i++) {
+        const d = document.createElement('div');
+        d.className = 'servo-row';
+        d.innerHTML =
+            '<span class="servo-label">S' + i + '</span>' +
+            '<input type="range" class="servo-slider" id="sv-sl-' + i + '" min="0" max="1000" value="500">' +
+            '<span class="servo-val" id="sv-val-' + i + '">500</span>' +
+            '<input type="number" class="servo-input" id="sv-rt-' + i + '" min="0" max="255" value="10" title="rampTime (x100ms)">' +
+            '<select class="servo-select" id="sv-rtype-' + i + '">' +
+                '<option value="0">Lin</option><option value="1">Sm1</option><option value="2">Sm2</option>' +
+                '<option value="3">Sm3</option><option value="4">Sm4</option><option value="5">Sm5</option>' +
+            '</select>' +
+            '<button class="btn-servo" onclick="sendServo(' + i + ')">Send</button>';
+        sec.appendChild(d);
+        const sl = d.querySelector('.servo-slider');
+        sl.addEventListener('input', function () {
+            document.getElementById('sv-val-' + i).textContent = this.value;
+        });
+    }
+}
+
+initDI();
+initPWM();
+initServo();
+
+// --- Device ID (persisted in localStorage) ---
+function getDevId() { return parseInt(document.getElementById('devId').value) || 1; }
+function saveDevId() { localStorage.setItem('er-hw-tester-devId', getDevId()); }
+function loadDevId() {
+    const saved = localStorage.getItem('er-hw-tester-devId');
+    if (saved) document.getElementById('devId').value = parseInt(saved) || 1;
+}
+function changeDevId(delta) {
+    const el = document.getElementById('devId');
+    let v = (parseInt(el.value) || 1) + delta;
+    if (v < 1) v = 1;
+    if (v > 255) v = 255;
+    el.value = v;
+    saveDevId();
+}
+document.getElementById('devId').addEventListener('change', saveDevId);
+loadDevId();
+
+// --- WebSocket ---
+function connectWS() {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(proto + '//' + location.host + '/er-hw-tester/ws');
+
+    ws.onopen = function () {
+        document.getElementById('wsDot').className = 'ws-dot ok';
+        document.getElementById('wsText').textContent = 'CONNECTED';
+    };
+    ws.onclose = function () {
+        document.getElementById('wsDot').className = 'ws-dot err';
+        document.getElementById('wsText').textContent = 'DISCONNECTED';
+        setTimeout(connectWS, 2000);
+    };
+    ws.onerror = function () {
+        ws.close();
+    };
+    ws.onmessage = function (ev) {
+        let msg;
+        try { msg = JSON.parse(ev.data); } catch (e) { return; }
+        if (msg.type === 'can_frame') handleCanFrame(msg);
+    };
+}
+connectWS();
+
+// --- Handle incoming CAN frame ---
+function handleCanFrame(f) {
+    const devId = getDevId();
+
+    // Update UI only for selected device
+    if (f.device_id === devId && f.direction === 'in') {
+        // Digital Input state changed
+        if (f.opcode === 0x06 && f.subsystem === 0x02) {
+            const ch = f.address;
+            if (ch >= 0 && ch < NUM_DI) {
+                const state = f.payload[0] === 1;
+                diState[ch] = state;
+                const led = document.getElementById('di-led-' + ch);
+                if (led) led.className = 'di-led' + (state ? ' on' : '');
+            }
+        }
+        // PWM value changed (confirmation)
+        if (f.opcode === 0x08 && f.subsystem === 0x03) {
+            const ch = f.address;
+            if (ch >= 0 && ch < NUM_PWM) {
+                const val = f.payload[0] | (f.payload[1] << 8);
+                document.getElementById('pwm-sl-' + ch).value = val;
+                document.getElementById('pwm-val-' + ch).textContent = val;
+            }
+        }
+        // USB Keyboard
+        if (f.opcode === 0x22 && f.subsystem === 0x12) {
+            const keyCode = f.payload[0];
+            const state = f.payload[1];
+            addUsbLog('kb', 'KEY 0x' + keyCode.toString(16).toUpperCase().padStart(2, '0') +
+                ' ' + (state ? 'PRESSED' : 'RELEASED'));
+        }
+        // USB Mouse
+        if (f.opcode === 0x21 && f.subsystem === 0x11) {
+            const buttons = f.payload[0];
+            const x = f.payload[1] > 127 ? f.payload[1] - 256 : f.payload[1];
+            const y = f.payload[2] > 127 ? f.payload[2] - 256 : f.payload[2];
+            addUsbLog('ms', 'MOUSE btn=0x' + buttons.toString(16).padStart(2, '0') +
+                ' x=' + (x >= 0 ? '+' : '') + x + ' y=' + (y >= 0 ? '+' : '') + y);
+        }
+    }
+
+    // CAN log — optionally filter by device
+    const filterDev = document.getElementById('canFilterDev').checked;
+    if (!filterDev || f.device_id === devId) {
+        addCanRow(f);
+    }
+}
+
+// --- USB log ---
+function addUsbLog(cls, text) {
+    const log = document.getElementById('usbLog');
+    const d = document.createElement('div');
+    d.className = cls;
+    d.textContent = '[' + timeStr() + '] ' + text;
+    log.appendChild(d);
+    while (log.children.length > MAX_USB_ROWS) log.removeChild(log.firstChild);
+    log.scrollTop = log.scrollHeight;
+}
+
+// --- CAN log table ---
+function addCanRow(f) {
+    const tbody = document.getElementById('canBody');
+    const tr = document.createElement('tr');
+    tr.className = f.direction === 'out' ? 'tx' : 'rx';
+    tr.innerHTML =
+        '<td>' + timeStr(f.timestamp) + '</td>' +
+        '<td>' + (f.direction === 'out' ? 'TX' : 'RX') + '</td>' +
+        '<td>0x' + f.raw_id.toString(16).padStart(3, '0').toUpperCase() + '</td>' +
+        '<td>' + f.device_id + '</td>' +
+        '<td>' + f.device_type_name + '</td>' +
+        '<td>' + (f.is_response ? 'Y' : 'N') + '</td>' +
+        '<td>0x' + f.opcode.toString(16).padStart(2, '0').toUpperCase() + ' ' + f.opcode_name + '</td>' +
+        '<td>0x' + f.subsystem.toString(16).padStart(2, '0').toUpperCase() + ' ' + f.subsystem_name + '</td>' +
+        '<td>' + f.address + '</td>' +
+        '<td>' + decodeValue(f) + '</td>' +
+        '<td>' + f.raw_data + '</td>';
+    tbody.appendChild(tr);
+    while (tbody.children.length > MAX_CAN_ROWS) tbody.removeChild(tbody.firstChild);
+    if (document.getElementById('canAutoScroll').checked) {
+        document.getElementById('canTableWrap').scrollTop = document.getElementById('canTableWrap').scrollHeight;
+    }
+}
+
+function clearCanLog() {
+    document.getElementById('canBody').innerHTML = '';
+}
+
+// --- Send commands ---
+function sendPwm(ch, value) {
+    document.getElementById('pwm-sl-' + ch).value = value;
+    document.getElementById('pwm-val-' + ch).textContent = value;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'set_pwm', device_id: getDevId(), channel: ch, value: value }));
+    }
+}
+
+function setPwm(ch, value) { sendPwm(ch, value); }
+
+function sendServo(ch) {
+    const tv = parseInt(document.getElementById('sv-sl-' + ch).value) || 500;
+    const rt = parseInt(document.getElementById('sv-rt-' + ch).value) || 10;
+    const rtype = parseInt(document.getElementById('sv-rtype-' + ch).value) || 0;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'set_servo', device_id: getDevId(), channel: ch, target_value: tv, ramp_time: rt, ramp_type: rtype }));
+    }
+}
+
+// --- Decode human-readable value from CAN frame ---
+function decodeValue(f) {
+    const p = f.payload;
+    switch (f.opcode) {
+        case 0x02: // DIGITAL_OUTPUT_SET_STATE
+        case 0x04: // DIGITAL_OUTPUT_STATE_CHANGED
+        case 0x06: // DIGITAL_INPUT_STATE_CHANGED
+            return p[0] ? 'ON' : 'OFF';
+        case 0x05: // DIGITAL_INPUT_GET_STATE
+        case 0x03: // DIGITAL_OUTPUT_GET_STATE
+            return 'query';
+        case 0x07: // PWM_OUTPUT_SET_VALUE
+        case 0x08: // PWM_OUTPUT_VALUE_CHANGED
+            return '' + ((p[0] || 0) | ((p[1] || 0) << 8));
+        case 0x09: // SERVO_SET_TARGET_VALUE
+            var tv = (p[0] || 0) | ((p[1] || 0) << 8);
+            return 'pos=' + tv + ' t=' + (p[2] || 0) + ' r=' + (p[3] || 0);
+        case 0x21: // USB_HID_MOUSE
+            var mx = p[1] > 127 ? p[1] - 256 : (p[1] || 0);
+            var my = p[2] > 127 ? p[2] - 256 : (p[2] || 0);
+            return 'btn=0x' + (p[0] || 0).toString(16).padStart(2,'0') + ' x=' + mx + ' y=' + my;
+        case 0x22: // USB_KEYBOARD
+            return 'key=0x' + (p[0] || 0).toString(16).padStart(2,'0').toUpperCase() + ' ' + (p[1] ? 'DOWN' : 'UP');
+        case 0x01: // EMERGENCY_STOP
+            return 'E-STOP';
+        default:
+            return '';
+    }
+}
+
+// --- Util ---
+function timeStr(ts) {
+    const d = ts ? new Date(ts) : new Date();
+    return d.toLocaleTimeString('pl-PL', { hour12: false }) + '.' + String(d.getMilliseconds()).padStart(3, '0');
+}
+</script>
+</body>
+</html>
